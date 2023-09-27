@@ -18,9 +18,11 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
   conn <- DBI::dbConnect(RPostgres::Postgres(),
                          dbname = db_name,
                          password = db_password)
+  cat("\n Connected to database \n")
   
   ## Get most recent date file (if it exists)
-  mrdf <- rev(list.files(paste0(output_folder,"ml_prepared/w_error/15s/",tag_f,""),full.names = TRUE, pattern = ".csv.gz"))[1]
+  mrdf <- rev(list.files(paste0(output_folder,"ml_prepared/w_error/15s/",tag_f,""),full.names = TRUE, pattern = ".csv.gz"))[1] #select recent file, as compessed csv
+  cat("\n Localized recent data file \n")
   
   ## Get date time to filter by
   if(!is.na(mrdf)){
@@ -29,8 +31,9 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
                               max())
     mrd <- lubridate::with_tz(mrd, tz = tz)
   } else{
-    mrd <- as.Date("2021-08-01")
+    mrd <- as.Date("2023-09-01")
   }
+  cat("\n Found filter date:", as.character(mrd), "\n")
   
   ## Read in tag log and reformat
   tag_log_mr <- sort(list.files(paste0(tag_folder),
@@ -38,23 +41,13 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
                                 pattern = "tag_log"),
                      decreasing = TRUE)[1]
   
-  ## Read in most recent tag log 
-  tag_start_dt <- readxl::read_excel(paste0(tag_log_mr))  %>%
-    janitor::clean_names() %>%
-    dplyr::transmute(tag = gsub("NA",NA, tag),
-                     tag_start_dt = lubridate::ymd_hm(paste(date, format(lubridate::ymd_hms(time), "%H:%M")),
-                                                      tz = "Australia/Broken_Hill"),
-                     sex,
-                     group = caught_together,
-                     antenna = antanne_type)  %>%
-    dplyr::filter(tag == tag_f) %>% 
-    dplyr::pull(tag_start_dt)
+  cat("\n Read tag log \n")
   
   ## Read in detections from database
   dets_f <- dplyr::tbl(conn, from = "raw") %>%
-    dplyr::filter(tag_id %in% tag_f) %>%
-    dplyr::filter(time > tag_start_dt) %>%
-    dplyr::filter(time > mrd) %>%
+    dplyr::filter(tag_id %in% local(tag_f)) %>%
+    #dplyr::filter(time > local(tag_start_dt)) %>% #not needed for first import
+    #dplyr::filter(time > local(mrd)) %>% #not needed for first import
     dplyr::collect() %>%
     dplyr::transmute(tag = tag_id,
                      date_time = lubridate::with_tz(time, tz = tz),
@@ -64,9 +57,10 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
                     node,
                     date_time,
                     .keep_all = T)
+  cat("\n Read in db detections \n")
   
   ## Read in node codes
-  node_codes <- readxl::read_xlsx(paste0(node_folder,"node_codes.xlsx")) %>%
+  node_codes <- readxl::read_xlsx(paste0(node_folder,"node_codes_20230906.xlsx")) %>%
     dplyr::mutate(node_number = as.character(node_number))
   
   ## Read in node log and reformat
@@ -117,7 +111,7 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
   
   ## Get grid point coordinates
   grid_points <- suppressWarnings(sf::read_sf(paste0(grid_points_folder, "grid_points.kml")) %>%
-                                    sf::st_transform(crs) %>%
+                                    sf::st_transform(3308) %>%
                                     dplyr::transmute(grid_point = gsub("Gp ", "gp_", Name),
                                                      x = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,1],
                                                      y = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,2]) %>%
@@ -125,8 +119,8 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
   
   
   cat("############ \n",
-      "Finished collecting raw data for tag: ", tag_f, "\n",
-      "############ \n", sep = "")
+      "Finished collecting raw data for tag
+      ############ \n", sep = "")
   
   ## Prepare each tag
   ml_prepare_dets_error_fn(tag_f = tag_f,
@@ -142,7 +136,7 @@ ml_update_localizations_fn <- function(tag_f = as.character(),
   ## Then localize
   ml_localizing_fn(tag_f = tag_f,
                    output_folder = output_folder,
-                   # grid_points = grid_points,
+                   grid_points = grid_points,
                    log_dist_RSSI_mdl = log_dist_RSSI_mdl,
                    tz = tz,
                    crs = crs)

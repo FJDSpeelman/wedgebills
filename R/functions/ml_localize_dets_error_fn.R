@@ -11,6 +11,8 @@ ml_localizing_fn <- function(tag_f,
   ## Read in model
   deg.f <- log_dist_RSSI_mdl$df.residual
   
+  print("read model")
+  
   ## Convert to table
   mdl_tab <- log_dist_RSSI_mdl %>% 
     broom::augment(newdata = data.frame(rssi = seq(-25, -115, by = -1)),
@@ -21,19 +23,22 @@ ml_localizing_fn <- function(tag_f,
                       sd = sqrt(.se.fit * deg.f)) %>% 
     dplyr::distinct(mean_rssi,.keep_all = T)
   
-  ## Get grid point coordinates
-  grid_points <- suppressWarnings(sf::read_sf(paste0(grid_points_folder, "grid_points.kml")) %>% 
-                                    sf::st_transform(crs) %>% 
+  print("converted to table")
+  
+  # Get grid point coordinates
+  grid_points <- suppressWarnings(sf::read_sf(paste0(grid_points_folder, "grid_points.kml")) %>%
+                                    sf::st_transform(3308) %>%
                                     dplyr::transmute(grid_point = gsub("Gp ", "gp_", Name),
                                                      x = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,1],
-                                                     y = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,2]) %>% 
+                                                     y = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,2]) %>%
                                     sf::st_drop_geometry())
-  
+
+  print("got gp coordinates")
   
   ## Convert grid points to lat/long  ########
   grid_points_ll <- suppressWarnings(grid_points %>%
                                        sf::st_as_sf(coords = c("x","y"),
-                                                    crs = crs) %>% 
+                                                    crs = 3308) %>% 
                                        sf::st_transform(4326) %>% 
                                        dplyr::transmute(grid_point,
                                                         gp_lon = as.matrix((sf::st_coordinates(.data$geometry)), ncol = 2)[,1],
